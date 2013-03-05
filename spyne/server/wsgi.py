@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 import cgi
 import threading
 import itertools
+from lxml import etree
 
 try:
     from cgi import parse_qs
@@ -230,7 +231,16 @@ class WsgiApplication(HttpBase):
 
         ctx.transport.wsdl = self._wsdl
 
+        # if there is an X-Forwarded-Proto header set, and it is https, reflect that in the url
+        proto = req_env.get('HTTP_X_FORWARDED_PROTO', None)
+        if proto is not None and proto == 'https' and url.startswith('http://'):
+            url = url.replace('http://', 'https://')
+
         if ctx.transport.wsdl is None:
+
+            self._last_wsdl_url = url
+            self._wsdl_etree_cache = None
+
             try:
                 self._mtx_build_interface_document.acquire()
 
@@ -255,6 +265,21 @@ class WsgiApplication(HttpBase):
 
             finally:
                 self._mtx_build_interface_document.release()
+
+        elif self._last_wsdl_url != url:
+
+            wsdl_etree = self._wsdl_etree_cache
+            if wsdl_etree is None:
+                logger.debug("generating wsdl etree cache...(this is the first request for a new domain)")
+                wsdl_etree = etree.fromstring(ctx.transport.wsdl)
+                self._wsdl_etree_cache = wsdl_etree
+            else:
+                logger.debug("wsdl etree was already cached")
+
+            service_nodes = wsdl_etree.xpath('/wsdl:definitions/wsdl:service/wsdl:port/soap:address', namespaces={'wsdl':'http://schemas.xmlsoap.org/wsdl/', 'soap':'http://schemas.xmlsoap.org/wsdl/soap/'})
+            service_nodes[0].set('location', url.replace('?wsdl', ''))
+            ctx.transport.wsdl = self._wsdl = etree.tostring(wsdl_etree, xml_declaration=True, encoding="UTF-8")
+            self._last_wsdl_url = url
 
         self.event_manager.fire_event('wsdl', ctx)
 
