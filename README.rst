@@ -1,5 +1,5 @@
-.. image:: https://travis-ci.org/arskom/spyne.png?branch=master
-        :target: http://travis-ci.org/arskom/spyne
+.. image:: https://travis-ci.org/xevo/spyne.png?branch=master
+        :target: http://travis-ci.org/xevo/spyne
 
 About
 =====
