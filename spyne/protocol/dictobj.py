@@ -250,23 +250,32 @@ class DictDocument(ProtocolBase):
         # validate raw input
         if validator is cls.SOFT_VALIDATION:
 
-            # start xevo's hack
-            # convert the string to a number inline
-            if issubclass(class_, Decimal) and isinstance(value, unicode):
-                logger.debug("trying to convert a string into a number...");
-                try:
-                    value = class_.from_string(value)
-                except:
-                   logger.error("xevo's str to num hack failed!")
-            # end xevo's hack
-
-            if issubclass(class_, Unicode) and not isinstance(value, unicode):
-                if not (issubclass(class_, String) and isinstance(value, str)):
+            if issubclass(class_, Decimal):
+                if isinstance(value, (unicode, str)):
+                    try:
+                        value = class_.from_string(value)
+                    except Exception as ex:
+                       logger.error("xevo's string to number hack failed!: " + str(ex))
+                if not isinstance(value, (int, long, float)):
                     raise ValidationError(value)
 
-            elif issubclass(class_, Decimal) and not isinstance(value,
-                                                            (int, long, float)):
-                raise ValidationError(value)
+            elif issubclass(class_, String):
+                if not isinstance(value, str):
+                    try:
+                        value = str(class_.to_string(value))
+                    except Exception as ex:
+                        logger.error("xevo's num to string hack failed!: " + str(ex))
+                if not isinstance(value, str):
+                    raise ValidationError(value)
+
+            elif issubclass(class_, Unicode):
+                if not isinstance(value, unicode):
+                    try:
+                        value = unicode(class_.to_string(value))
+                    except Exception as ex:
+                        logger.error("xevo's num to unicode hack failed!: " + str(ex))
+                if not isinstance(value, unicode):
+                    raise ValidationError(value)
 
             elif issubclass(class_, DateTime) and not (
                                 isinstance(value, unicode) and
