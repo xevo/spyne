@@ -40,9 +40,8 @@ from spyne.model.primitive import Point
 from spyne.const import xml_ns as namespace
 from spyne.const import MAX_STRING_FIELD_LENGTH
 from spyne.const import MAX_ARRAY_ELEMENT_NUM
-from spyne.const import ARRAY_PREFIX
-from spyne.const import ARRAY_SUFFIX
-from spyne.const import TYPE_SUFFIX
+from spyne.const.suffix import ARRAY_SUFFIX
+from spyne.const.suffix import TYPE_SUFFIX
 
 from spyne.util import memoize
 from spyne.util import sanitize_args
@@ -130,7 +129,6 @@ class TypeInfo(odict):
 
 class _SimpleTypeInfoElement(object):
     __slots__ = ['path', 'parent', 'type', 'is_array']
-
     def __init__(self, path, parent, type_, is_array):
         self.path = path
         self.parent = parent
@@ -359,7 +357,7 @@ class ComplexModelMeta(type(ModelBase)):
 
                 gen_spyne_info(self)
 
-        # for spyne objects being converted to a sqlalchemy table
+        # for spyne objects that is being converted to a
         elif meta is not None and (tn is not None or t is not None) and \
                                                        len(self._type_info) > 0:
             from spyne.util.sqlalchemy import gen_sqla_info
@@ -416,14 +414,6 @@ class ComplexModelBase(ModelBase):
             av = getattr(self, k, None)
             if (isclass(av) and issubclass(av, ModelBase)) or kv is not None:
                 setattr(self, k, kv)
-            elif not hasattr(self, k):
-                # this is to detach implicit assignment and explicit assignment
-                # so that the user erros don't get concealed by implicit's
-                # try-except block.
-                try:
-                    setattr(self, k, None)
-                except:
-                    pass
 
     def __len__(self):
         return len(self._type_info)
@@ -664,14 +654,6 @@ class ComplexModelBase(ModelBase):
         retval.__type_name__ = cls.__type_name__
         retval.__namespace__ = cls.__namespace__
 
-        tn = kwargs.get("type_name", None)
-        if tn is not None:
-            retval.__type_name__ = tn
-
-        ns = kwargs.get("namespace", None)
-        if ns is not None:
-            retval.__namespace__ = ns
-
         e = getattr(retval, '__extends__', None)
         if e != None:
             retval.__extends__ = getattr(e, '__extends__', None)
@@ -698,7 +680,6 @@ class Array(ComplexModelBase):
     """This class generates a ComplexModel child that has one attribute that has
     the same name as the serialized class. It's contained in a Python list.
     """
-
     __metaclass__ = ComplexModelMeta
 
     def __new__(cls, serializer, **kwargs):
@@ -715,15 +696,16 @@ class Array(ComplexModelBase):
 
         if serializer.get_type_name() is ModelBase.Empty:
             member_name = serializer.__base_type__.get_type_name()
-            if retval.__type_name__ == cls.__type_name__:
-                retval.__type_name__ = ModelBase.Empty # to be resolved later
+            if cls.__type_name__ is None:
+                cls.__type_name__ = ModelBase.Empty # to be resolved later
 
         else:
             member_name = serializer.get_type_name()
-            if retval.__type_name__ == cls.__type_name__:
-                retval.__type_name__ = '%s%s%s' % (ARRAY_PREFIX, member_name,
-                                                                   ARRAY_SUFFIX)
+            if cls.__type_name__ is None:
+                cls.__type_name__ = '%s%s' % (serializer.get_type_name(),
+                                                                ARRAY_SUFFIX)
 
+        retval.__type_name__ = '%s%s' % (member_name, ARRAY_SUFFIX)
         retval._type_info = {member_name: serializer}
 
         return retval
@@ -765,8 +747,6 @@ class Iterable(Array):
     implementation, this is just a marker.
     """
 
-    class Attributes(Array.Attributes):
-        logged = False
 
 class Alias(ComplexModelBase):
     """Different type_name, same _type_info."""
@@ -786,37 +766,33 @@ def log_repr(obj, cls=None, given_len=None):
         cls = obj.__class__
 
     if issubclass(cls, Array) or cls.Attributes.max_occurs > 1:
+        retval = []
+
+        cls, = cls._type_info.values()
+
         if not cls.Attributes.logged:
-            retval = "%s(...)" % cls.get_type_name()
+            retval.append("%s (...)" % cls.get_type_name())
+
+        elif cls.Attributes.logged == 'len':
+            l = '?'
+
+            try:
+                l = str(len(obj))
+            except TypeError, e:
+                if given_len is not None:
+                    l = str(given_len)
+
+            retval.append("%s[%s] (...)" % (cls.get_type_name(), l))
 
         else:
-            retval = []
+            for i,o in enumerate(obj):
+                retval.append(_log_repr_obj(o, cls))
 
-            cls, = cls._type_info.values()
+                if i > MAX_ARRAY_ELEMENT_NUM:
+                    retval.append("(...)")
+                    break
 
-            if not cls.Attributes.logged:
-                retval.append("%s (...)" % cls.get_type_name())
-
-            elif cls.Attributes.logged == 'len':
-                l = '?'
-
-                try:
-                    l = str(len(obj))
-                except TypeError, e:
-                    if given_len is not None:
-                        l = str(given_len)
-
-                retval.append("%s[%s] (...)" % (cls.get_type_name(), l))
-
-            else:
-                for i,o in enumerate(obj):
-                    retval.append(_log_repr_obj(o, cls))
-
-                    if i > MAX_ARRAY_ELEMENT_NUM:
-                        retval.append("(...)")
-                        break
-
-            retval = "%s([%s])" % (cls.get_type_name(), ', '.join(retval))
+        retval = "%s([%s])" % (cls.get_type_name(), ', '.join(retval))
 
     elif issubclass(cls, ComplexModel):
         if cls.Attributes.logged:

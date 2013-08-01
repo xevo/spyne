@@ -222,10 +222,10 @@ class MethodContext(object):
         """The locale the request will use when needed for things like date
         formatting, html rendering and such."""
 
-        self.in_protocol = transport.app.in_protocol
+        self.in_protocol = None
         """The protocol that will be used to (de)serialize incoming input"""
 
-        self.out_protocol = transport.app.out_protocol
+        self.out_protocol = None
         """The protocol that will be used to (de)serialize outgoing input"""
 
         self.frozen = True
@@ -430,7 +430,7 @@ class EventManager(object):
 
         :param event_name: The event identifier, indicated by the documentation.
                            Usually, this is a string.
-        :param ctx: The method context. Event-related data is conventionally
+        :param handler: The method context. Event-related data is conventionally
                         stored in ctx.event attribute.
         """
 

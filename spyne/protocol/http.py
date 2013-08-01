@@ -24,13 +24,8 @@ implementation.
 import logging
 logger = logging.getLogger(__name__)
 
-import pytz
 import tempfile
 
-from base64 import b64encode
-
-from spyne.model.binary import ByteArray
-from spyne.model.primitive import DateTime
 from spyne.protocol.dictobj import DictDocument
 
 try:
@@ -65,51 +60,14 @@ def get_stream_factory(dir=None, delete=True):
 
     return stream_factory
 
-_weekday = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-_month = ['w00t', "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep",
-             "Oct", "Nov", "Dec"]
-
-def to_string(prot, val, cls):
-    if issubclass(cls, DateTime):
-        if val.tzinfo is not None:
-            val = val.astimezone(pytz.utc)
-        else:
-            val = val.replace(tzinfo=pytz.utc)
-
-        return "%s, %02d %s %04d %02d:%02d:%02d GMT" % (
-                            _weekday[val.weekday()], val.day, _month[val.month],
-                            val.year, val.hour, val.minute, val.second)
-    elif issubclass(cls, ByteArray):
-        return cls.to_string(val, suggested_encoding=prot.default_binary_encoding)
-
-    else:
-        return cls.to_string(val)
-
 
 class HttpRpc(DictDocument):
     """The so-called ReST-ish HttpRpc protocol implementation. It only works
     with Http (wsgi and twisted) transports.
-
-    :param app: An :class:'spyne.application.Application` instance.
-    :param validator: Validation method to use. One of (None, 'soft')
-    :param mime_type: Default mime type to set. Default is 'application/octet-stream'
-    :param tmp_dir: Temporary directory to store partial file uploads. Default
-        is to use the OS default.
-    :param tmp_delete_on_close: The ``delete`` argument to the
-        :class:`tempfile.NamedTemporaryFile`.
-        See: http://docs.python.org/2/library/tempfile.html#tempfile.NamedTemporaryFile.
-    :param ignore_uncap: As HttpRpc can't serialize complex models, it throws a
-        server exception when the return type of the user function is Complex.
-        Passing ``True`` to this argument prevents that by ignoring the return
-        value.
     """
 
     mime_type = 'text/plain'
     allowed_http_verbs = None
-    default_binary_encoding = 'base64'
-
-    type = set(DictDocument.type)
-    type.add('http')
 
     def __init__(self, app=None, validator=None, mime_type=None,
                     tmp_dir=None, tmp_delete_on_close=True, ignore_uncap=False):
@@ -208,7 +166,7 @@ class HttpRpc(DictDocument):
                     out_header = ctx.out_header[0]
 
                 ctx.out_header_doc = self.object_to_flat_dict(header_class,
-                                          out_header, subvalue_eater=to_string)
+                                                                     out_header)
 
         else:
             ctx.transport.mime_type = 'text/plain'

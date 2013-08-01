@@ -17,12 +17,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301
 #
 
-
-"""
-A server that uses http as transport via wsgi. It doesn't contain any server
-logic.
-"""
-
+"""A server transport uses http as transport, and wsgi as bridge api."""
 
 import logging
 logger = logging.getLogger(__name__)
@@ -31,6 +26,11 @@ import cgi
 import threading
 import itertools
 from lxml import etree
+import re
+
+from spyne.auxproc import process_contexts
+from spyne.model.binary import File
+from spyne.protocol.http import HttpRpc
 
 try:
     from cgi import parse_qs
@@ -39,21 +39,23 @@ except ImportError: # Python 3
 
 try:
     from werkzeug.formparser import parse_form_data
-except ImportError, e:
-    def parse_form_data(*args, **kwargs):
-        raise e
+except ImportError:
+    parse_form_data = None
 
-from spyne.application import get_fault_string_from_exception
-from spyne.auxproc import process_contexts
-from spyne.error import RequestTooLongError
-from spyne.model.binary import File
-from spyne.model.fault import Fault
-from spyne.protocol.http import HttpRpc
-from spyne.protocol.http import HttpPattern
-from spyne.server.http import HttpBase
 from spyne.server.http import HttpMethodContext
 from spyne.server.http import HttpTransportContext
+
+from spyne.error import RequestTooLongError
+
+from spyne.protocol.http import HttpPattern
 from spyne.util import reconstruct_url
+from spyne.server.http import HttpBase
+
+try:
+    from spyne.protocol.soap.mime import apply_mtom
+except ImportError, e:
+    def apply_mtom(*args, **kwargs):
+        raise e
 
 from spyne.const.ansi_color import LIGHT_GREEN
 from spyne.const.ansi_color import END_COLOR
@@ -61,13 +63,6 @@ from spyne.const.http import HTTP_200
 from spyne.const.http import HTTP_404
 from spyne.const.http import HTTP_405
 from spyne.const.http import HTTP_500
-
-
-try:
-    from spyne.protocol.soap.mime import apply_mtom
-except ImportError, e:
-    def apply_mtom(*args, **kwargs):
-        raise e
 
 
 def _get_http_headers(req_env):
@@ -146,10 +141,8 @@ class WsgiApplication(HttpBase):
             called both from success and error cases.
     '''
 
-    def __init__(self, app, chunked=True,
-                max_content_length=2 * 1024 * 1024,
-                block_length=8 * 1024):
-        HttpBase.__init__(self, app, chunked, max_content_length, block_length)
+    def __init__(self, app, chunked=True):
+        HttpBase.__init__(self, app, chunked)
 
         self._allowed_http_verbs = app.in_protocol.allowed_http_verbs
         self._verb_handlers = {
@@ -236,11 +229,15 @@ class WsgiApplication(HttpBase):
         if proto is not None and proto == 'https' and url.startswith('http://'):
             url = url.replace('http://', 'https://')
 
-        if ctx.transport.wsdl is None:
+        real_path = req_env.get('HTTP_X_FORWARDED_PATH_INFO', None)
+	if real_path is not None:
+            url = re.sub(r'(https?://[^/]+)/.*', r"\1" + real_path, url)
 
+        if ctx.transport.wsdl is None:
+            
             self._last_wsdl_url = url
             self._wsdl_etree_cache = None
-
+            
             try:
                 self._mtx_build_interface_document.acquire()
 
@@ -265,9 +262,9 @@ class WsgiApplication(HttpBase):
 
             finally:
                 self._mtx_build_interface_document.release()
-
+        
         elif self._last_wsdl_url != url:
-
+            
             wsdl_etree = self._wsdl_etree_cache
             if wsdl_etree is None:
                 logger.debug("generating wsdl etree cache...(this is the first request for a new domain)")
@@ -280,14 +277,12 @@ class WsgiApplication(HttpBase):
             service_nodes[0].set('location', url.replace('?wsdl', ''))
             ctx.transport.wsdl = self._wsdl = etree.tostring(wsdl_etree, xml_declaration=True, encoding="UTF-8")
             self._last_wsdl_url = url
-
+        
         self.event_manager.fire_event('wsdl', ctx)
 
         ctx.transport.resp_headers['Content-Length'] = \
                                                     str(len(ctx.transport.wsdl))
         start_response(HTTP_200, _gen_http_headers(ctx.transport.resp_headers))
-
-        ctx.close()
 
         return [ctx.transport.wsdl]
 
@@ -312,7 +307,7 @@ class WsgiApplication(HttpBase):
             # Report but ignore any exceptions from auxiliary methods.
             logger.exception(e)
 
-        return itertools.chain(p_ctx.out_string, self.__finalize(p_ctx))
+        return p_ctx.out_string
 
     def handle_rpc(self, req_env, start_response):
         initial_ctx = WsgiMethodContext(self, req_env,
@@ -344,14 +339,7 @@ class WsgiApplication(HttpBase):
         if p_ctx.transport.resp_code is None:
             p_ctx.transport.resp_code = HTTP_200
 
-        try:
-            self.get_out_string(p_ctx)
-
-        except Exception, e:
-            logger.exception(e)
-            p_ctx.out_error = Fault('Server', get_fault_string_from_exception(e))
-            return self.handle_error(p_ctx, others, p_ctx.out_error, start_response)
-
+        self.get_out_string(p_ctx)
 
         if isinstance(self.app.out_protocol, HttpRpc) and \
                                                p_ctx.out_header_doc is not None:
@@ -486,6 +474,7 @@ class WsgiApplication(HttpBase):
                             for pk, pv in p_method_descriptor.in_message.\
                                                              _type_info.items():
                                 if pk in r.rule:
+                                    from spyne.model.primitive import String
                                     from spyne.model.primitive import Unicode
                                     from spyne.model.primitive import Decimal
 

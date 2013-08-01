@@ -70,8 +70,6 @@ class DictDocument(ProtocolBase):
     Implement ``create_in_document`` and ``create_out_string`` to use this.
     """
 
-    default_binary_encoding = None
-
     def create_in_document(self, ctx, in_string_encoding=None):
         raise NotImplementedError()
 
@@ -251,10 +249,20 @@ class DictDocument(ProtocolBase):
     def _from_dict_value(cls, class_, value, validator):
         # validate raw input
         if validator is cls.SOFT_VALIDATION:
-            if issubclass(class_, Unicode) and not isinstance(value, unicode):
-                # Note that String is a subclass of Unicode
-                if not (issubclass(class_, String) and isinstance(value, str)):
+
+            # start xevo's hack
+            # convert the string to a number inline
+            if issubclass(class_, Decimal) and isinstance(value, unicode):
+                logger.debug("trying to convert a string into a number...");
+                try:
                     value = class_.from_string(value)
+                except:
+                   logger.error("xevo's str to num hack failed!")
+            # end xevo's hack
+
+            if issubclass(class_, Unicode) and not isinstance(value, unicode):
+                if not (issubclass(class_, String) and isinstance(value, str)):
+                    raise ValidationError(value)
 
             elif issubclass(class_, Decimal) and not isinstance(value,
                                                             (int, long, float)):
@@ -364,13 +372,7 @@ class DictDocument(ProtocolBase):
 
                 if issubclass(member.type, (File, ByteArray)):
                     if isinstance(v2, str) or isinstance(v2, unicode):
-                        if member.type.Attributes.encoding is None and \
-                                        cls.default_binary_encoding is not None:
-                            native_v2 = member.type.from_string(v2,
-                                                    cls.default_binary_encoding)
-
-                        else:
-                            native_v2 = member.type.from_string(v2)
+                        native_v2 = member.type.from_string(v2)
                     else:
                         native_v2 = v2
                 else:
@@ -413,7 +415,7 @@ class DictDocument(ProtocolBase):
 
                     nidx = int(indexes.popleft())
 
-                    if nidx > len(ninst) or nidx < 0:
+                    if nidx > len(ninst):
                         raise ValidationError(orig_k,
                                             "%%r Invalid array index %d." % idx)
 
@@ -453,7 +455,7 @@ class DictDocument(ProtocolBase):
 
     @classmethod
     def object_to_flat_dict(cls, inst_cls, value, hier_delim="_", retval=None,
-                     prefix=None, parent=None, subvalue_eater=lambda prot,v,t:v):
+                                                      prefix=None, parent=None):
         """Converts a native python object to a flat dict.
 
         See :func:`spyne.model.complex.ComplexModelBase.get_flat_type_info`.
@@ -479,7 +481,7 @@ class DictDocument(ProtocolBase):
 
                 if subvalue is not None or v.Attributes.min_occurs > 0:
                     try:
-                        retval[key] = subvalue_eater(cls, subvalue, v)
+                        retval[key] = subvalue
                     except: # FIXME: What?
                         if v.Attributes.min_occurs > 0:
                             retval[key] = None

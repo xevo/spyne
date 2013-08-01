@@ -329,7 +329,8 @@ class TestSpyne2Sqlalchemy(unittest.TestCase):
 
             i = Integer(primary_key=True)
 
-        t = SomeClass.Attributes.sqla_table
+        t = gen_sqla_info(SomeClass)
+
         assert t.c['i'].type.__class__ is sqlalchemy.DECIMAL
 
     def test_table_args(self):
@@ -343,7 +344,8 @@ class TestSpyne2Sqlalchemy(unittest.TestCase):
             i = Integer(primary_key=True)
             j = Unicode(64)
 
-        t = SomeClass.Attributes.sqla_table
+        t = gen_sqla_info(SomeClass)
+
         assert isinstance(t.c['j'].type, sqlalchemy.Unicode)
 
         for c in t.constraints:

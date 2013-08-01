@@ -23,11 +23,6 @@ import os
 import base64
 import tempfile
 
-from base64 import b64encode
-from base64 import b64decode
-from binascii import hexlify
-from binascii import unhexlify
-
 try:
     from cStringIO import StringIO
 except ImportError: # Python 3
@@ -39,17 +34,6 @@ from spyne.model import nillable_iterable
 from spyne.model import ModelBase
 from spyne.model import SimpleModel
 
-_encoding_handlers = {
-    None: ''.join,
-    'hex': hexlify,
-    'base64': b64encode,
-}
-
-_decoding_handlers = {
-    None: lambda x: [x],
-    'hex': unhexlify,
-    'base64': b64decode,
-}
 
 class ByteArray(SimpleModel):
     """Canonical container for arbitrary data. Every protocol has a different
@@ -63,43 +47,15 @@ class ByteArray(SimpleModel):
     __type_name__ = 'base64Binary'
     __namespace__ = "http://www.w3.org/2001/XMLSchema"
 
-    class Attributes(SimpleModel.Attributes):
-        encoding = None
-        """The binary encoding to use when the protocol does not enforce an
-        encoding for binary data.
-
-        One of (None, 'base64', 'hex')
-        """
-
-    def __new__(cls, **kwargs):
-        if 'encoding' in kwargs:
-            v = kwargs['encoding']
-
-            if v in (None, 'base64'):
-                kwargs['type_name'] = 'base64Binary'
-            elif v == 'hex':
-                kwargs['type_name'] = 'hexBinary'
-            else:
-                raise ValueError("'encoding' must be one of: %r" % \
-                                (tuple(ByteArray._encoding.handlers.values()),))
-
-
-        return SimpleModel.__new__(cls, **kwargs)
+    @classmethod
+    @nillable_string
+    def from_string(cls, value):
+        return [value]
 
     @classmethod
     @nillable_string
-    def from_string(cls, value, suggested_encoding=None):
-        encoding = cls.Attributes.encoding
-        if encoding is None:
-            encoding = suggested_encoding
-        return _decoding_handlers[encoding](value)
-
-    @classmethod
-    @nillable_string
-    def to_string(cls, value, encoding):
-        if encoding is None:
-            encoding = cls.Attributes.encoding
-        return _encoding_handlers[encoding](value)
+    def to_string(cls, value):
+        return ''.join(value)
 
     @classmethod
     @nillable_iterable
@@ -128,14 +84,6 @@ class File(SimpleModel):
 
     __type_name__ = 'base64Binary'
     __namespace__ = "http://www.w3.org/2001/XMLSchema"
-
-    class Attributes(SimpleModel.Attributes):
-        encoding = None
-        """The binary encoding to use when the protocol does not enforce an
-        encoding for binary data.
-
-        One of (None, 'base64', 'hex')
-        """
 
     class Value(object):
         def __init__(self, name=None, path=None, type='application/octet-stream',
@@ -216,11 +164,8 @@ class File(SimpleModel):
 
     @classmethod
     @nillable_string
-    def from_string(cls, value, suggested_encoding=None):
-        encoding = cls.Attributes.encoding
-        if encoding is None:
-            encoding = suggested_encoding
-        return File.Value(data=_decoding_handlers[encoding](value))
+    def from_string(cls, value):
+        return File.Value(data=[value])
 
     @classmethod
     @nillable_string
