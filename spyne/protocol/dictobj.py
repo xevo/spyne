@@ -1,4 +1,3 @@
-
 #
 # spyne - Copyright (C) Spyne contributors.
 #
@@ -256,7 +255,7 @@ class DictDocument(ProtocolBase):
                         value = class_.from_string(value)
                     except Exception as ex:
                        logger.error("xevo's string to number hack failed!: " + str(ex))
-                if not isinstance(value, (int, long, float)):
+                if not isinstance(value, (int, long, float, Decimal)):
                     raise ValidationError(value)
 
             elif issubclass(class_, String):
